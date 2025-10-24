@@ -7,7 +7,7 @@
   <link rel="manifest" href="./manifest.json">
   <meta name="theme-color" content="#0f766e">
   <meta name="color-scheme" content="light dark">
-  <link rel="icon" href="./icons/icon-192.png">
+  <link rel="icon" href="./icons/icon-128.png">
   <style>
     :root { --c:#0f766e; --bg:#fff; --fg:#111; --muted:#6b7280; --ring:rgba(15,118,110,.18); }
     @media (prefers-color-scheme: dark){
@@ -42,7 +42,7 @@
   <h1>Work Shift</h1>
 
   <div class="row"><strong>Check-in</strong><span id="in" class="kpi">—</span></div>
-  <div class="row"><strong>Total (Work + Break)</strong><span id="sum" class="kpi">—</span></div>
+  <div class="row"><strong>Total (Work + Break + Recovery)</strong><span id="sum" class="kpi">—</span></div>
   <div class="row"><strong>Check-out</strong><span id="out" class="kpi">—</span></div>
 
   <div class="toolbar">
@@ -56,7 +56,7 @@
   <dialog id="dlg">
     <h2 style="margin:0 0 8px 0">Settings</h2>
     <p class="muted" style="margin-top:0">Enter durations in <b>HH:MM</b> (e.g. 08:36, 00:30).  
-      The app remains locked until valid values are saved.</p>
+      The app remains locked until valid values are saved for Work and Lunch break.</p>
     <div class="grid">
       <div class="field">
         <label for="durWork">Work duration (HH:MM)</label>
@@ -67,6 +67,12 @@
         <label for="durBreak">Lunch break (HH:MM)</label>
         <input id="durBreak" type="text" placeholder="00:30" autocomplete="off">
         <div id="errBreak" class="err"></div>
+      </div>
+      <!-- NEW: optional Recovery Time -->
+      <div class="field">
+        <label for="durRecovery">Recovery Time (HH:MM, optional)</label>
+        <input id="durRecovery" type="text" placeholder="00:00" autocomplete="off">
+        <div id="errRecovery" class="err"></div>
       </div>
       <!-- Manual check-in (optional) -->
       <div class="field" style="grid-column: 1 / -1;">
@@ -84,6 +90,7 @@
   <script>
     const K_W = 'workDurationHM';
     const K_B = 'breakDurationHM';
+    const K_R = 'recoveryDurationHM';   // NEW
     const K_IN = 'checkinEpochMs';
 
     const fmtClock = new Intl.DateTimeFormat('en-GB', { hour: '2-digit', minute:'2-digit', hour12: false });
@@ -91,13 +98,14 @@
     const $ = sel => document.querySelector(sel);
     const elIn = $('#in'), elOut = $('#out'), elSum = $('#sum');
     const btnIn = $('#checkin'), btnReset = $('#reset'), btnSet = $('#settings');
-    const dlg = $('#dlg'), inputW = $('#durWork'), inputB = $('#durBreak');
-    const errW = $('#errWork'), errB = $('#errBreak'), btnSave = $('#save');
+    const dlg = $('#dlg'), inputW = $('#durWork'), inputB = $('#durBreak'), inputR = $('#durRecovery');
+    const errW = $('#errWork'), errB = $('#errBreak'), errR = $('#errRecovery'), btnSave = $('#save');
     const inputManual = $('#manualCheckIn'), errManual = $('#errManual');
 
     function parseHM(s){
-      if (!s) return null;
+      if (s == null) return null;
       s = s.trim();
+      if (!s) return 0; // allow empty => 0 minutes (for Recovery)
       const m = /^(\d{1,2})\s*:\s*([0-5]\d)$/.exec(s);
       if (!m) return null;
       return Number(m[1])*60 + Number(m[2]);
@@ -109,13 +117,14 @@
     function getDurations(){
       const Ws = localStorage.getItem(K_W);
       const Bs = localStorage.getItem(K_B);
+      const Rs = localStorage.getItem(K_R);
       const W = parseHM(Ws);
       const B = parseHM(Bs);
-      return { Ws, Bs, W, B };
+      const R = parseHM(Rs); // can be 0
+      return { Ws, Bs, Rs, W, B, R };
     }
     function setManualCheckInToday(hhmm){
-      // Expects "HH:MM" 24h — sets today's date at that time
-      const m = /^([01]?\d|2[0-3]):([0-5]\d)$/.exec(hhmm || '');
+      const m = /^([01]?\d|2[0-3]):([0-5]\d)$/.exec((hhmm || '').trim());
       if (!m) return false;
       const now = new Date();
       const d = new Date(now.getFullYear(), now.getMonth(), now.getDate(), Number(m[1]), Number(m[2]), 0, 0);
@@ -125,32 +134,33 @@
     function validateAndSave(){
       const Wm = parseHM(inputW.value);
       const Bm = parseHM(inputB.value);
-      let ok = true; errW.textContent=''; errB.textContent=''; errManual.textContent='';
+      const Rm = parseHM(inputR.value); // optional; empty => 0
+      let ok = true; errW.textContent=''; errB.textContent=''; errR.textContent=''; errManual.textContent='';
 
       if (Wm === null || Wm <= 0) { errW.textContent = 'Enter valid HH:MM (> 00:00)'; ok = false; }
       if (Bm === null || Bm < 0)  { errB.textContent = 'Enter valid HH:MM (≥ 00:00)'; ok = false; }
+      if (Rm === null || Rm < 0)  { errR.textContent = 'Enter valid HH:MM (≥ 00:00)'; ok = false; }
 
-      // Optional manual check-in; validate only if non-empty
       const manual = (inputManual.value || '').trim();
-      if (manual) {
-        if (!setManualCheckInToday(manual)) {
-          errManual.textContent = 'Invalid time. Use HH:MM (24h).';
-          ok = false;
-        }
+      if (manual && !setManualCheckInToday(manual)) {
+        errManual.textContent = 'Invalid time. Use HH:MM (24h).';
+        ok = false;
       }
 
       if (!ok) return false;
 
       localStorage.setItem(K_W, fmtHM(Wm));
       localStorage.setItem(K_B, fmtHM(Bm));
+      localStorage.setItem(K_R, fmtHM(Rm || 0)); // store 00:00 if empty
       return true;
     }
     function ensureSettings(){
-      const { W, B, Ws, Bs } = getDurations();
+      const { W, B, Ws, Bs, Rs } = getDurations();
       const have = (W && W>0) && (B != null && B >= 0);
       if (!have) {
         inputW.value = Ws || '';
         inputB.value = Bs || '';
+        inputR.value = Rs || '';   // optional
         inputManual.value = '';
         dlg.showModal();
         btnIn.disabled = true;
@@ -163,8 +173,9 @@
       return have;
     }
     function recompute(){
-      const { W, B } = getDurations();
-      if (W != null && B != null) elSum.textContent = fmtHM(W + B);
+      const { W, B, R } = getDurations();
+      const w = (W ?? 0), b = (B ?? 0), r = (R ?? 0);
+      if (W != null && B != null && R != null) elSum.textContent = fmtHM(w + b + r);
       else elSum.textContent = '—';
 
       const v = localStorage.getItem(K_IN);
@@ -172,8 +183,8 @@
 
       const checkIn = new Date(Number(v));
       elIn.textContent = fmtClock.format(checkIn);
-      if (W != null && B != null) {
-        const out = new Date(checkIn.getTime() + (W+B)*60*1000);
+      if (W != null && B != null && R != null) {
+        const out = new Date(checkIn.getTime() + (w+b+r)*60*1000);
         elOut.textContent = fmtClock.format(out);
       } else elOut.textContent = '—';
     }
@@ -188,9 +199,10 @@
       recompute();
     };
     btnSet.onclick = () => {
-      const { Ws, Bs } = getDurations();
+      const { Ws, Bs, Rs } = getDurations();
       inputW.value = Ws || '';
       inputB.value = Bs || '';
+      inputR.value = Rs || '';
       inputManual.value = '';
       dlg.showModal();
     };
