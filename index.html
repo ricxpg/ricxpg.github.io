@@ -60,20 +60,20 @@
     <div class="grid">
       <div class="field">
         <label for="durWork">Work duration (HH:MM)</label>
-        <input id="durWork" type="text" inputmode="numeric" placeholder="08:36" autocomplete="off">
+        <input id="durWork" type="text" placeholder="08:36" autocomplete="off">
         <div id="errWork" class="err"></div>
       </div>
       <div class="field">
         <label for="durBreak">Lunch break (HH:MM)</label>
-        <input id="durBreak" type="text" inputmode="numeric" placeholder="00:30" autocomplete="off">
+        <input id="durBreak" type="text" placeholder="00:30" autocomplete="off">
         <div id="errBreak" class="err"></div>
       </div>
-      <!-- NEW: manual check-in time (optional) -->
+      <!-- Manual check-in (optional) -->
       <div class="field" style="grid-column: 1 / -1;">
         <label for="manualCheckIn">Manual check-in (today, HH:MM) — optional</label>
         <input id="manualCheckIn" type="time" step="60" placeholder="09:00" autocomplete="off">
         <div id="errManual" class="err"></div>
-        <span class="muted">If provided, the check-in will be set to today at this time when you press Save.</span>
+        <span class="muted">If provided, today’s check-in will be set to this time when you press Save.</span>
       </div>
     </div>
     <div class="actions">
@@ -114,7 +114,7 @@
       return { Ws, Bs, W, B };
     }
     function setManualCheckInToday(hhmm){
-      // Accepts "HH:MM" (24h) and sets today's date at that time
+      // Expects "HH:MM" 24h — sets today's date at that time
       const m = /^([01]?\d|2[0-3]):([0-5]\d)$/.exec(hhmm || '');
       if (!m) return false;
       const now = new Date();
