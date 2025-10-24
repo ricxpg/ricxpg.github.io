@@ -129,6 +129,13 @@
     const fmtHM=mins=>{const h=Math.floor(mins/60),m=mins%60;return`${String(h).padStart(2,'0')}:${String(m).padStart(2,'0')}`;};
     const getDur=()=>({W:toMin(localStorage.getItem(K_W)),B:toMin(localStorage.getItem(K_B)),R:toMin(localStorage.getItem(K_R)||'00:00')});
     const setManual=t=>{const m=toMin(t);if(m==null)return!1;const d=new Date();d.setHours(Math.floor(m/60),m%60,0,0);localStorage.setItem(K_IN,d.getTime());return!0;};
+	if ('serviceWorker' in navigator) {
+		navigator.serviceWorker.addEventListener('controllerchange', () => {
+    // If a new service worker took control, reload this page once
+    // (avoid loops: this fires only on controller change)
+			window.location.reload();
+		});
+	}
 
     function setLang(lang){
       const L=I18N[lang]||I18N.en;
