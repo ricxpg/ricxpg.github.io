@@ -31,8 +31,8 @@
     dialog { border: 0; border-radius: 14px; padding: 18px; width: min(92vw, 560px); color: var(--fg); background: var(--bg); }
     .grid { display:grid; grid-template-columns: 1fr 1fr; gap: 12px; }
     .field{ display:flex; flex-direction:column; gap:6px; }
-    input[type="text"]{ padding: 12px 12px; border: 1px solid #33415555; border-radius: 10px; font-size: 16px; background: transparent; color: var(--fg); }
-    input[type="text"]:focus{ outline: none; box-shadow: 0 0 0 4px var(--ring); border-color: transparent; }
+    input[type="text"], input[type="time"]{ padding: 12px 12px; border: 1px solid #33415555; border-radius: 10px; font-size: 16px; background: transparent; color: var(--fg); }
+    input[type="text"]:focus, input[type="time"]:focus{ outline: none; box-shadow: 0 0 0 4px var(--ring); border-color: transparent; }
     .err{ color:#ef4444; font-size: 13px; min-height: 1.2em; }
     .actions{ display:flex; justify-content:flex-end; gap:10px; margin-top: 12px; }
     .kpi{ font-variant-numeric: tabular-nums; font-feature-settings: "tnum"; }
@@ -68,6 +68,13 @@
         <input id="durBreak" type="text" inputmode="numeric" placeholder="00:30" autocomplete="off">
         <div id="errBreak" class="err"></div>
       </div>
+      <!-- NEW: manual check-in time (optional) -->
+      <div class="field" style="grid-column: 1 / -1;">
+        <label for="manualCheckIn">Manual check-in (today, HH:MM) — optional</label>
+        <input id="manualCheckIn" type="time" step="60" placeholder="09:00" autocomplete="off">
+        <div id="errManual" class="err"></div>
+        <span class="muted">If provided, the check-in will be set to today at this time when you press Save.</span>
+      </div>
     </div>
     <div class="actions">
       <button id="save">Save</button>
@@ -86,6 +93,7 @@
     const btnIn = $('#checkin'), btnReset = $('#reset'), btnSet = $('#settings');
     const dlg = $('#dlg'), inputW = $('#durWork'), inputB = $('#durBreak');
     const errW = $('#errWork'), errB = $('#errBreak'), btnSave = $('#save');
+    const inputManual = $('#manualCheckIn'), errManual = $('#errManual');
 
     function parseHM(s){
       if (!s) return null;
@@ -105,13 +113,34 @@
       const B = parseHM(Bs);
       return { Ws, Bs, W, B };
     }
+    function setManualCheckInToday(hhmm){
+      // Accepts "HH:MM" (24h) and sets today's date at that time
+      const m = /^([01]?\d|2[0-3]):([0-5]\d)$/.exec(hhmm || '');
+      if (!m) return false;
+      const now = new Date();
+      const d = new Date(now.getFullYear(), now.getMonth(), now.getDate(), Number(m[1]), Number(m[2]), 0, 0);
+      localStorage.setItem(K_IN, d.getTime());
+      return true;
+    }
     function validateAndSave(){
       const Wm = parseHM(inputW.value);
       const Bm = parseHM(inputB.value);
-      let ok = true; errW.textContent=''; errB.textContent='';
+      let ok = true; errW.textContent=''; errB.textContent=''; errManual.textContent='';
+
       if (Wm === null || Wm <= 0) { errW.textContent = 'Enter valid HH:MM (> 00:00)'; ok = false; }
       if (Bm === null || Bm < 0)  { errB.textContent = 'Enter valid HH:MM (≥ 00:00)'; ok = false; }
+
+      // Optional manual check-in; validate only if non-empty
+      const manual = (inputManual.value || '').trim();
+      if (manual) {
+        if (!setManualCheckInToday(manual)) {
+          errManual.textContent = 'Invalid time. Use HH:MM (24h).';
+          ok = false;
+        }
+      }
+
       if (!ok) return false;
+
       localStorage.setItem(K_W, fmtHM(Wm));
       localStorage.setItem(K_B, fmtHM(Bm));
       return true;
@@ -122,6 +151,7 @@
       if (!have) {
         inputW.value = Ws || '';
         inputB.value = Bs || '';
+        inputManual.value = '';
         dlg.showModal();
         btnIn.disabled = true;
         btnReset.disabled = true;
@@ -161,6 +191,7 @@
       const { Ws, Bs } = getDurations();
       inputW.value = Ws || '';
       inputB.value = Bs || '';
+      inputManual.value = '';
       dlg.showModal();
     };
     btnSave.onclick = () => {
