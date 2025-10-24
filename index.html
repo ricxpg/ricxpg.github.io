@@ -124,18 +124,10 @@
     let fmtClock=new Intl.DateTimeFormat('en-US',{hour:'2-digit',minute:'2-digit',hour12:true});
     const ERR={};
 
-    // helpers
     const toMin=hhmm=>{if(!hhmm)return null;const m=/^([01]?\d|2[0-3]):([0-5]\d)$/.exec(hhmm.trim());if(!m)return null;return +m[1]*60+ +m[2];};
     const fmtHM=mins=>{const h=Math.floor(mins/60),m=mins%60;return`${String(h).padStart(2,'0')}:${String(m).padStart(2,'0')}`;};
     const getDur=()=>({W:toMin(localStorage.getItem(K_W)),B:toMin(localStorage.getItem(K_B)),R:toMin(localStorage.getItem(K_R)||'00:00')});
     const setManual=t=>{const m=toMin(t);if(m==null)return!1;const d=new Date();d.setHours(Math.floor(m/60),m%60,0,0);localStorage.setItem(K_IN,d.getTime());return!0;};
-	if ('serviceWorker' in navigator) {
-		navigator.serviceWorker.addEventListener('controllerchange', () => {
-    // If a new service worker took control, reload this page once
-    // (avoid loops: this fires only on controller change)
-			window.location.reload();
-		});
-	}
 
     function setLang(lang){
       const L=I18N[lang]||I18N.en;
@@ -147,7 +139,7 @@
     }
 
     function validate(){
-      const wVal=$('#durWork').value, bVal=$('#durBreak').value, rVal=$('#durRecovery').value; // rVal optional
+      const wVal=$('#durWork').value, bVal=$('#durBreak').value, rVal=$('#durRecovery').value;
       let ok=1; $('#errWork').textContent=$('#errBreak').textContent=$('#errRecovery').textContent=$('#errManual').textContent='';
 
       const w=toMin(wVal); if(w==null || w<=0){ $('#errWork').textContent=ERR.work; ok=0; }
@@ -167,22 +159,29 @@
 
       localStorage.setItem(K_W, fmtHM(toMin(wVal)));
       localStorage.setItem(K_B, fmtHM(toMin(bVal)));
-      localStorage.setItem(K_R, fmtHM(r)); // store 00:00 if empty
+      localStorage.setItem(K_R, fmtHM(r)); // 00:00 if empty
       return true;
     }
 
     function ensure(){
       const {W,B}=getDur();
       const ok = (W!=null && W>0) && (B!=null && B>=0);
-      if(!ok){ $('#dlg').showModal(); $('#checkin').disabled=true; $('#reset').disabled=true; }
+      if(!ok){ openSettingsPrefilled(); $('#checkin').disabled=true; $('#reset').disabled=true; }
       else { if($('#dlg').open) $('#dlg').close(); $('#checkin').disabled=false; $('#reset').disabled=false; }
       return ok;
+    }
+
+    function openSettingsPrefilled(){
+      $('#durWork').value     = localStorage.getItem(K_W) || '';
+      $('#durBreak').value    = localStorage.getItem(K_B) || '';
+      $('#durRecovery').value = localStorage.getItem(K_R) || '';
+      $('#manualCheckIn').value = '';
+      $('#dlg').showModal();
     }
 
     function refresh(){
       const {W,B,R}=getDur();
       const w=W??0, b=B??0, r=R??0;
-      // Recovery OPTIONAL: show total if Work and Break exist; Recovery defaults to 0 if empty
       $('#sum').textContent = (W!=null && B!=null) ? fmtHM(w+b+r) : '—';
 
       const v=localStorage.getItem(K_IN);
@@ -196,7 +195,7 @@
     // buttons
     $('#checkin').onclick=()=>{ if(!ensure()) return; localStorage.setItem(K_IN, Date.now()); refresh(); };
     $('#reset').onclick =()=>{ localStorage.removeItem(K_IN); refresh(); };
-    $('#settings').onclick=()=>{ $('#dlg').showModal(); };
+    $('#settings').onclick=()=>{ openSettingsPrefilled(); };
     $('#save').onclick    =()=>{ if(validate()){ $('#dlg').close(); refresh(); $('#checkin').disabled=false; $('#reset').disabled=false; } };
     document.addEventListener('change',e=>{ if(e.target.name==='lang') setLang(e.target.value); });
 
@@ -207,7 +206,12 @@
     // init
     setLang(localStorage.getItem(K_LANG) || ((navigator.language||'en').startsWith('it')?'it':'en'));
     ensure(); refresh();
-    if('serviceWorker' in navigator) window.addEventListener('load', ()=>navigator.serviceWorker.register('./sw.js'));
+
+    // PWA registration + auto-reload on updates (controllerchange)
+    if('serviceWorker' in navigator){
+      window.addEventListener('load', ()=>navigator.serviceWorker.register('./sw.js'));
+      navigator.serviceWorker.addEventListener('controllerchange', ()=>window.location.reload());
+    }
   </script>
 </body>
 </html>
