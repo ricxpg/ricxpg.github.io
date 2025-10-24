@@ -1,59 +1,188 @@
 <!doctype html>
-<html lang="it">
+<html lang="en">
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
   <title>Check In</title>
   <link rel="manifest" href="./manifest.json">
   <meta name="theme-color" content="#0f766e">
+  <meta name="color-scheme" content="light dark">
   <link rel="icon" href="./icons/icon-192.png">
   <style>
-    body { font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif; margin: 24px; max-width: 560px; }
-    .row { display:flex; justify-content:space-between; margin: 12px 0; }
-    button { padding: 12px 16px; font-size: 16px; }
-    .muted{opacity:.7}
+    :root { --c:#0f766e; --bg:#fff; --fg:#111; --muted:#6b7280; --ring:rgba(15,118,110,.18); }
+    @media (prefers-color-scheme: dark){
+      :root { --bg:#0b0f10; --fg:#e5e7eb; --muted:#9ca3af; --ring:rgba(34,197,94,.25);}
+    }
+    html,body{height:100%}
+    body { margin: 24px; font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif; max-width: 640px;
+           color: var(--fg); background: var(--bg); }
+    h1 { margin: 0 0 12px 0; }
+    .row { display:flex; justify-content:space-between; align-items:baseline; padding:10px 0; border-bottom: 1px dashed #e5e7eb22; }
+    .row strong{font-weight:600}
+    .toolbar { display:flex; gap:10px; margin-top: 18px; flex-wrap: wrap; }
+    button { padding: 12px 16px; font-size: 16px; border: 0; border-radius: 10px; background: var(--c); color:#fff; cursor:pointer; }
+    button.ghost{ background:#e6f3f2; color:#063d38; }
+    @media (prefers-color-scheme: dark){
+      button.ghost{ background:#103a36; color:#d1fae5; }
+    }
+    button:disabled{ opacity:.55; cursor:not-allowed }
+    .muted{ color: var(--muted); font-size: 14px; }
+    dialog::backdrop { background: rgba(0,0,0,.45); }
+    dialog { border: 0; border-radius: 14px; padding: 18px; width: min(92vw, 560px); color: var(--fg); background: var(--bg); }
+    .grid { display:grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+    .field{ display:flex; flex-direction:column; gap:6px; }
+    input[type="text"]{ padding: 12px 12px; border: 1px solid #33415555; border-radius: 10px; font-size: 16px; background: transparent; color: var(--fg); }
+    input[type="text"]:focus{ outline: none; box-shadow: 0 0 0 4px var(--ring); border-color: transparent; }
+    .err{ color:#ef4444; font-size: 13px; min-height: 1.2em; }
+    .actions{ display:flex; justify-content:flex-end; gap:10px; margin-top: 12px; }
+    .kpi{ font-variant-numeric: tabular-nums; font-feature-settings: "tnum"; }
   </style>
 </head>
 <body>
-  <h1>Turno</h1>
-  <div class="row"><strong>Check-in</strong><span id="in">—</span></div>
-  <div class="row"><strong>Check-out (8h36m)</strong><span id="out">—</span></div>
-  <div style="margin-top:24px">
-    <button id="checkin">Check-in</button>
-    <button id="reset" class="muted">Reset</button>
+  <h1>Work Shift</h1>
+
+  <div class="row"><strong>Check-in</strong><span id="in" class="kpi">—</span></div>
+  <div class="row"><strong>Total (Work + Break)</strong><span id="sum" class="kpi">—</span></div>
+  <div class="row"><strong>Check-out</strong><span id="out" class="kpi">—</span></div>
+
+  <div class="toolbar">
+    <button id="checkin" disabled>Check-in</button>
+    <button id="reset" class="ghost" disabled>Reset</button>
+    <button id="settings" class="ghost">Settings</button>
   </div>
-  <p class="muted">Suggerimento: “Aggiungi a schermata Home” dal menu del browser su Android.</p>
+  <p class="muted">24-hour format. Installable offline PWA (GitHub Pages). Data stored locally.</p>
+
+  <!-- Settings dialog -->
+  <dialog id="dlg">
+    <h2 style="margin:0 0 8px 0">Settings</h2>
+    <p class="muted" style="margin-top:0">Enter durations in <b>HH:MM</b> (e.g. 08:36, 00:30).  
+      The app remains locked until valid values are saved.</p>
+    <div class="grid">
+      <div class="field">
+        <label for="durWork">Work duration (HH:MM)</label>
+        <input id="durWork" type="text" inputmode="numeric" placeholder="08:36" autocomplete="off">
+        <div id="errWork" class="err"></div>
+      </div>
+      <div class="field">
+        <label for="durBreak">Lunch break (HH:MM)</label>
+        <input id="durBreak" type="text" inputmode="numeric" placeholder="00:30" autocomplete="off">
+        <div id="errBreak" class="err"></div>
+      </div>
+    </div>
+    <div class="actions">
+      <button id="save">Save</button>
+    </div>
+  </dialog>
 
   <script>
-    const DUR_MS = (8*60 + 36) * 60 * 1000; // 8h36m
-    const fmt = new Intl.DateTimeFormat(undefined, { hour: '2-digit', minute:'2-digit' });
+    const K_W = 'workDurationHM';
+    const K_B = 'breakDurationHM';
+    const K_IN = 'checkinEpochMs';
 
-    const elIn = document.getElementById('in');
-    const elOut = document.getElementById('out');
-    const btnIn = document.getElementById('checkin');
-    const btnReset = document.getElementById('reset');
+    const fmtClock = new Intl.DateTimeFormat('en-GB', { hour: '2-digit', minute:'2-digit', hour12: false });
 
-    function load() {
-      const v = localStorage.getItem('checkinEpochMs');
+    const $ = sel => document.querySelector(sel);
+    const elIn = $('#in'), elOut = $('#out'), elSum = $('#sum');
+    const btnIn = $('#checkin'), btnReset = $('#reset'), btnSet = $('#settings');
+    const dlg = $('#dlg'), inputW = $('#durWork'), inputB = $('#durBreak');
+    const errW = $('#errWork'), errB = $('#errBreak'), btnSave = $('#save');
+
+    function parseHM(s){
+      if (!s) return null;
+      s = s.trim();
+      const m = /^(\d{1,2})\s*:\s*([0-5]\d)$/.exec(s);
+      if (!m) return null;
+      return Number(m[1])*60 + Number(m[2]);
+    }
+    function fmtHM(totalMin){
+      const h = Math.floor(totalMin/60), m = totalMin%60;
+      return `${String(h).padStart(2,'0')}:${String(m).padStart(2,'0')}`;
+    }
+    function getDurations(){
+      const Ws = localStorage.getItem(K_W);
+      const Bs = localStorage.getItem(K_B);
+      const W = parseHM(Ws);
+      const B = parseHM(Bs);
+      return { Ws, Bs, W, B };
+    }
+    function validateAndSave(){
+      const Wm = parseHM(inputW.value);
+      const Bm = parseHM(inputB.value);
+      let ok = true; errW.textContent=''; errB.textContent='';
+      if (Wm === null || Wm <= 0) { errW.textContent = 'Enter valid HH:MM (> 00:00)'; ok = false; }
+      if (Bm === null || Bm < 0)  { errB.textContent = 'Enter valid HH:MM (≥ 00:00)'; ok = false; }
+      if (!ok) return false;
+      localStorage.setItem(K_W, fmtHM(Wm));
+      localStorage.setItem(K_B, fmtHM(Bm));
+      return true;
+    }
+    function ensureSettings(){
+      const { W, B, Ws, Bs } = getDurations();
+      const have = (W && W>0) && (B != null && B >= 0);
+      if (!have) {
+        inputW.value = Ws || '';
+        inputB.value = Bs || '';
+        dlg.showModal();
+        btnIn.disabled = true;
+        btnReset.disabled = true;
+      } else {
+        if (dlg.open) dlg.close();
+        btnIn.disabled = false;
+        btnReset.disabled = false;
+      }
+      return have;
+    }
+    function recompute(){
+      const { W, B } = getDurations();
+      if (W != null && B != null) elSum.textContent = fmtHM(W + B);
+      else elSum.textContent = '—';
+
+      const v = localStorage.getItem(K_IN);
       if (!v) { elIn.textContent = '—'; elOut.textContent = '—'; return; }
-      const t = new Date(Number(v));
-      const out = new Date(t.getTime() + DUR_MS);
-      elIn.textContent = fmt.format(t);
-      elOut.textContent = fmt.format(out);
+
+      const checkIn = new Date(Number(v));
+      elIn.textContent = fmtClock.format(checkIn);
+      if (W != null && B != null) {
+        const out = new Date(checkIn.getTime() + (W+B)*60*1000);
+        elOut.textContent = fmtClock.format(out);
+      } else elOut.textContent = '—';
     }
 
     btnIn.onclick = () => {
-      localStorage.setItem('checkinEpochMs', Date.now());
-      load();
+      if (!ensureSettings()) return;
+      localStorage.setItem(K_IN, Date.now());
+      recompute();
     };
     btnReset.onclick = () => {
-      localStorage.removeItem('checkinEpochMs');
-      load();
+      localStorage.removeItem(K_IN);
+      recompute();
     };
+    btnSet.onclick = () => {
+      const { Ws, Bs } = getDurations();
+      inputW.value = Ws || '';
+      inputB.value = Bs || '';
+      dlg.showModal();
+    };
+    btnSave.onclick = () => {
+      if (validateAndSave()){
+        dlg.close();
+        btnIn.disabled = false;
+        btnReset.disabled = false;
+        recompute();
+      }
+    };
+    dlg.addEventListener('cancel', (e) => {
+      const { W, B } = getDurations();
+      if (!(W && B != null)) e.preventDefault();
+    });
+    dlg.addEventListener('close', () => {
+      const { W, B } = getDurations();
+      if (!(W && B != null)) setTimeout(()=>dlg.showModal(),0);
+    });
 
-    load();
+    ensureSettings();
+    recompute();
 
-    // Registra il service worker (necessario per installazione/offline)
     if ('serviceWorker' in navigator) {
       window.addEventListener('load', () => {
         navigator.serviceWorker.register('./sw.js');
